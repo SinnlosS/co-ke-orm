@@ -10,7 +10,15 @@ abstract class Model {
     $this->modelList  = $modelList;
   }
   public function &__get($property) {
-    if(!isset($this->properties[$property]) && !property_exists($this, $property)) {
+    if(strpos($property, "__")) {
+      $parts = explode("__", $property);
+      $_prop = array_shift($parts);
+      if(isset($this->properties[$_prop]) && $this->properties[$_prop]['loaded'] && $this->$_prop instanceof Model) {
+        $_property = implode("__",$parts);
+        return $this->$_prop->$_property;
+      }
+    }
+    if(!isset($this->properties[$property])) {
       throw new \Exception("Property {$property} doesn't exist");
     }
     if(!$this->properties[$property]['loaded']) {
@@ -24,7 +32,7 @@ abstract class Model {
     return $this->$property;
   }
   public function __set($property,$value) {
-    if(strpos($property, "__")) {
+    if(strpos($property, "__") && strpos($property,"fk__")!==0) {
       list($object,$property) = explode("__",$property);
       if($object!==NULL) {
         $this->$object->$property = $value;
@@ -33,6 +41,8 @@ abstract class Model {
       return;
     }
     if(!isset($this->properties[$property]) && !property_exists($this, $property)) {
+      $this->$property = $value;
+      return;
       throw new \Exception("Property {$property} doesn't exist");
     }
     $method = "set".ucfirst($property);
@@ -40,9 +50,6 @@ abstract class Model {
       throw new \Exception("No Setter-Method found for Property {$property}");
     }
     elseif(isset($this->properties[$property])) {
-      if(!$this->properties[$property]['object']->validate($value)) {
-        throw new \InvalidArgumentException("Invalid argument for Property {$property}");
-      }
       $this->$property = $value;
       $this->properties[$property]['loaded'] = true;
     }
@@ -56,6 +63,20 @@ abstract class Model {
       $this->properties[$property->name]['object'] = $property;
       $this->properties[$property->name]['loaded'] = false;
     }
+  }
+  public function isLoaded($property) {
+    if(strpos($property, "__")) {
+      $parts = explode("__", $property);
+      $_prop = array_shift($parts);
+      if(isset($this->properties[$_prop]) && $this->properties[$_prop]['loaded'] && $this->$_prop instanceof Model) {
+        $_property = implode("__",$parts);
+        return $this->$_prop->isLoaded($_property);
+      }
+    }
+    if(!isset($this->properties[$property])) {
+      throw new \Exception("Property {$property} doesn't exist");
+    }
+    return $this->properties[$property]['loaded'];
   }
   public function asArray($full=true) {
     $data = array();

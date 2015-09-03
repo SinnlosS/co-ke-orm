@@ -4,7 +4,7 @@ class Condition {
   protected $repository;
   protected $property;
   protected $condition;
-  protected $value;
+  protected $value = NULL;
   protected $__callWhitelist = array("_and","_or","_xor","rp","orderby","limit","lp");
   public static function factory(Repository $repository,Property $property) {
     return new self($repository,$property);
@@ -48,6 +48,14 @@ class Condition {
     $this->condition.= "!=?";
     return $this;
   }
+  public function isNull() {
+    $this->condition.= " IS NULL";
+    return $this;
+  }
+  public function isNotNull() {
+    $this->condition.= " IS NOT NULL";
+    return $this;
+  }
   public function gt($value) {
     $this->value     = $value;
     $this->condition.= ">?";
@@ -80,6 +88,21 @@ class Condition {
     $values          = $values===null ? func_get_args() : $values;
     if(!count($values)) {
       throw new InvalidArgumentException("No Parameter passed for IN-Clause");
+    }
+    foreach($values as $value) {
+      $placeHolder[]  = "?";
+      $this->value[]  = $value;
+    }
+    $this->condition.= implode(",",$placeHolder).")";
+    return $this;
+  }
+  public function not_in(array $values=null) {
+    $this->condition.= " NOT IN(";
+    $this->value     = array();
+    $placeHolder     = array();
+    $values          = $values===null ? func_get_args() : $values;
+    if(!count($values)) {
+      throw new \InvalidArgumentException("No Parameter passed for NOT IN-Clause");
     }
     foreach($values as $value) {
       $placeHolder[]  = "?";

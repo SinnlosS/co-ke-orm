@@ -70,7 +70,7 @@ class Select implements Statement {
       $this->queryString.= " WHERE ";
       foreach($this->conditions as $condition) {
         $this->queryString.= $condition;
-        if($condition instanceof Condition) {
+        if($condition instanceof Condition && $condition->value!==NULL) {
           if(!is_array($condition->value)) {
             $this->bindValues[] =& $condition->value;
           }
@@ -95,7 +95,7 @@ class Select implements Statement {
       $message = $this->openParenthesis>0 ? "Unclosed left parenthesis" : "Unopened right parenthesis";
       throw new Exception("{$message}, can't query {$this->queryString}");
     }
-    $res = $this->repository->db->prepare($this->queryString) or die("query: {$this->queryString}\n error: ".$this->repository->db->error);
+    $res = $this->repository->db->prepare($this->queryString);
     if(count($this->bindValues)) {
       $i = 1;
       foreach($this->bindValues as $key=>&$value) {
@@ -107,28 +107,49 @@ class Select implements Statement {
     $return = new ModelList($this->repository);
     $keys   = array();
     while($row=$res->fetch(\PDO::FETCH_ASSOC)) {
-      $object = new $this->repository->modelClass($this->repository,$return);
-      $object->injectProperties($this->repository->properties);
+      $object = $this->repository->getFromCache($row[$this->repository->pkField]);
+      if(!$object) {
+        $fromCache = false;
+        $object = new $this->repository->modelClass($this->repository,$return);
+        $object->injectProperties($this->repository->properties);
+      }
+      else {
+        $fromCache = true;
+      }
       foreach($this->innerJoins as $join) {
-        if($property->type=="column" && (!$property->isLazy || $complete)) {
-          $set       = "set".ucfirst($join->repository->table);
-          $setObject = new $join->modelClass($join);
-          $setObject->injectProperties($join->properties);
-          $object->$set($setObject);
+        if(isset($row[$join->name."__".$join->pkField])) {
+          $joinObject = $join->getFromCache($row[$join->name."__".$join->pkField]);
+          if($joinObject) {
+            $object->{$join->name} = $joinObject;
+          }
+          else {
+            $joinObject = new $join->modelClass($join);
+            $joinObject->injectProperties($join->properties);
+            $object->{$join->name} = $joinObject;
+          }
         }
       }
       foreach($this->leftJoins as $join) {
-        if($property->type=="column" && (!$property->isLazy || $complete)) {
-          $set       = "set".ucfirst($join->table);
-          $setObject = new $join->modelClass($join);
-          $setObject->injectProperties($join->properties);
-          $object->$set($setObject);
+        if(isset($row[$join->name."__".$join->pkField])) {
+          $joinObject = $join->getFromCache($row[$join->name."__".$join->pkField]);
+          if($joinObject) {
+            $object->{$join->name} = $joinObject;
+          }
+          else {
+            $joinObject = new $join->modelClass($join);
+            $joinObject->injectProperties($join->properties);
+            $object->{$join->name} = $joinObject;
+          }
         }
       }
       foreach($row as $key=>$value) {
-        $object->$key = $value;
+        if(!$object->isLoaded($key)) {
+          $object->$key = $value;
+        }
       }
-      $rpk = $object->{$this->repository->pkField};
+      if(!$fromCache) {
+        $this->repository->addToCache($object);
+      }
       $return[$object->{$this->repository->pkField}] = $object;
       $keys[] = $object->{$this->repository->pkField};
       $this->repository->addToCache($object);
@@ -207,9 +228,9 @@ class Select implements Statement {
     }
     return $this;
   }
-  public function limit($count,$offset=0) {
-    $this->limitCount  = $count;
-    $this->limitOffset = $offset;
+  public function limit($count,$offset=NULL) {
+    $this->limitCount  = $offset===NULL?$count:intval($offset);
+    $this->limitOffset = $offset===NULL?0:intval($count);
     return $this;
   }
   private function addOrderByParam($column,$direction="ASC") {

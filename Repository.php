@@ -2,6 +2,7 @@
 namespace de\coding_keller\ORM;
 abstract class Repository {
   protected $db;
+  protected $name;
   protected $table;
   protected $pkField;
   protected $modelClass;
@@ -17,10 +18,6 @@ abstract class Repository {
   public function belongsTo($class,$name=null,$isLazy=true) {
     $name = !$name ? $class : $name;
     if(!$this->hasProperty($name)) {
-      $className = $class."_Repository";
-      if(!class_exists($className)) {
-        throw new \InvalidArgumentException("Can't belong to nonexisting class '{$class}'");
-      }
       $this->belongsTo[$name] = $class;
       $this->setProperty(new Property($name,array("isLazy"=>$isLazy,"type"=>"belongsTo")));
     }
@@ -38,7 +35,11 @@ abstract class Repository {
     }
   }
   public function __construct(\PDO $db,$table,$pkField,$modelClass) {
-    $this->db = $db;
+    $repository = get_class($this);
+    $parts      = explode("_",$repository);
+    $trash      = array_pop($parts);
+    $this->name = implode("_",$parts);
+    $this->db   = $db;
     $this->setTable($table)->setPkField($pkField)->setModelClass($modelClass);
   }
   public function __get($property) {
@@ -107,19 +108,21 @@ abstract class Repository {
   public function hasProperty($property) {
     return isset($this->properties[$property]);
   }
-  public function getColumns($complete=false) {
+  public function getColumns($complete=false,$asJoin=false) {
     $columns = array();
     foreach($this->properties as $property) {
       if($property->type=="column" && (!$property->isLazy || $complete)) {
-        $columns[] = "`{$this->table}`.`{$property->name}`";
+        if($asJoin) {
+          $columns[] = "`{$this->table}`.`{$property->name}` as `{$this->name}__{$property->name}`";
+        }
+        else {
+          $columns[] = "`{$this->table}`.`{$property->name}`";
+        }
       }
     }
     return $columns;
   }
   public function addToCache(Model $object) {
-    if(!$object instanceof $this->modelClass) {
-      throw new \Exception("Can't add object to cache, wrong Model.");
-    }
     $this->cache[$object->{$this->pkField}] = $object;
   }
   public function getFromCache($pkValue) {
@@ -184,11 +187,11 @@ abstract class Repository {
   }
   public function find($complete=false) {
     $this->statement = new Select($this);
-    $columns = $this->getColumns();
+    $columns = $this->getColumns($complete);
     if($complete) {
       foreach($this->belongsTo as $name=>$class) {
         $repository = $this->db->repository($class);
-        $columns = array_merge($columns,$repository->getColumns());
+        $columns = array_merge($columns,$repository->getColumns(true,true));
         $this->statement->leftJoin($repository);
       }
       $this->loadHavings = true;
@@ -197,7 +200,7 @@ abstract class Repository {
       foreach($this->belongsTo as $name=>$class) {
         if(!$this->properties[$name]->isLazy) {
           $repository = $this->db->repository($class);
-          $columns = array_merge($columns,$repository->getColumns());
+          $columns = array_merge($columns,$repository->getColumns(true,true));
           $this->statement->leftJoin($repository);
         }
       }

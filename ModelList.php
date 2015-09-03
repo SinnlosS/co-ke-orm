@@ -11,12 +11,6 @@ class ModelList implements \ArrayAccess,\Iterator {
     $this->repository = $repository;
     $this->parentList = $parentList;
   }
-  public function &__get($property) {
-
-  }
-  public function __set($property,$value) {
-
-  }
   public function lazyLoad(Property $property) {
     if($this->parentList instanceof ModelList) {
       $this->parentList->lazyLoad($property);
@@ -29,6 +23,31 @@ class ModelList implements \ArrayAccess,\Iterator {
       $this->models[$key]->{$property->name} = $val;
     }
     return $this;
+  }
+  public function sort($property,$direction="asc") {
+    $direction = strtolower($direction);
+    $switched = false;
+    $keyMap   = array();
+    $models   = $this->models;
+    if($direction==="desc") {
+      do {
+        foreach($models as $key=>$model) {
+          $cur = !isset($cur)||$model->$property>$cur->$property?$model:$cur;
+        }
+        $keyMap[] = $cur->id;
+        unset($models[$cur->id]);
+      } while(count($models));
+    }
+    else {
+      do {
+        foreach($models as $key=>$model) {
+          $cur = !isset($cur)||$model->$property<$cur->$property?$model:$cur;
+        }
+        $keyMap[] = $cur->id;
+        unset($models[$cur->id]);
+      } while(count($models));
+    }
+    $this->keyMap;
   }
   public function avg($column) {
     $i = 0;
@@ -63,7 +82,7 @@ class ModelList implements \ArrayAccess,\Iterator {
           $max = $model->$column>$max ? $model->$column : $max;
         }
         else {
-          $max = $max===null || $model->$column>$max->$column ? $model : $max;
+          $max = $model->$column>$max->$column ? $model : $max;
         }
       }
     }
